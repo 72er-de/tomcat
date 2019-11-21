@@ -472,8 +472,8 @@ public final class EmbeddedServletOptions implements Options {
      * @param context The Servlet context
      */
     public EmbeddedServletOptions(ServletConfig config, ServletContext context) {
-        Enumeration<String> enumeration = config.getInitParameterNames();
 
+        Enumeration<String> enumeration = config.getInitParameterNames();
         while (enumeration.hasMoreElements()) {
             String key = enumeration.nextElement();
             String value = config.getInitParameter(key);
@@ -491,26 +491,27 @@ public final class EmbeddedServletOptions implements Options {
         setDevelopment(config);
         setSuppressMap(config);
         setDumpSmap(config);
-        setGenStingAsArray(config);
+        setGenStringAsCharArray(config);
         setErrorOnUseBeanInvalidClassAttribute(config);
         setIeClassId(config);
         setClasspath(config);
 
         setScratchDir(config, context);
-
-        if (this.scratchDir == null) {
+        // TODO: Check this behaviour, if scratchDir == null
+        // then EmbeddedServletOptions is not correctly initiated!
+        // Could only happen if System.getProperty("java.io.tmpdir")
+        // is not set. -> unusual exception?
+        if (scratchDir == null) {
             log.fatal(Localizer.getMessage("jsp.error.no.scratch.dir"));
             return;
         }
-
         if (!(scratchDir.exists() && scratchDir.canRead() &&
                 scratchDir.canWrite() && scratchDir.isDirectory())) {
             log.fatal(Localizer.getMessage("jsp.error.bad.scratch.dir",
                     scratchDir.getAbsolutePath()));
         }
 
-        this.compiler = config.getInitParameter("compiler");
-
+        setCompiler(config);
         setCompilerTargetVM(config);
         setCompilerSourceVM(config);
         setJavaEncoding(config);
@@ -522,348 +523,34 @@ public final class EmbeddedServletOptions implements Options {
         setJspIdleTimeout(config);
         setStrictQuoteEscaping(config);
         setQuoteAttributeEL(config);
-
-        // Setup the global Tag Libraries location cache for this
-        // web-application.
-        tldCache = TldCache.getInstance(context);
-
-        // Setup the jsp config info for this web app.
-        jspConfig = new JspConfig(context);
-
-        // Create a Tag plugin instance
-        tagPluginManager = new TagPluginManager(context);
+        setTldCache(context);
+        setJspConfig(context);
+        setTagPluginManager(context);
     }
-
-    private void setQuoteAttributeEL(ServletConfig config) {
-        String quoteAttributeElValue = config.getInitParameter("quoteAttributeEL");
-
-        if (quoteAttributeElValue != null) {
-            if (quoteAttributeElValue.equalsIgnoreCase("true")) {
-                this.quoteAttributeEL = true;
-            } else if (quoteAttributeElValue.equalsIgnoreCase("false")) {
-                this.quoteAttributeEL = false;
+    
+    private void setKeepGenerated(ServletConfig config) {
+        String keepgenerated = config.getInitParameter("keepgenerated");
+        if (keepgenerated != null) {
+            if (keepgenerated.equalsIgnoreCase("true")) {
+                this.keepGenerated = true;
+            } else if (keepgenerated.equalsIgnoreCase("false")) {
+                this.keepGenerated = false;
             } else {
                 if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.quoteAttributeEL"));
+                    log.warn(Localizer.getMessage("jsp.warning.keepgen"));
                 }
             }
         }
     }
 
-    private void setStrictQuoteEscaping(ServletConfig config) {
-        String strictQuoteEscapingValue = config.getInitParameter("strictQuoteEscaping");
-
-        if (strictQuoteEscapingValue != null) {
-            if (strictQuoteEscapingValue.equalsIgnoreCase("true")) {
-                this.strictQuoteEscaping = true;
-            } else if (strictQuoteEscapingValue.equalsIgnoreCase("false")) {
-                this.strictQuoteEscaping = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.strictQuoteEscaping"));
-                }
-            }
-        }
-    }
-
-    private void setJspIdleTimeout(ServletConfig config) {
-        String jspIdleTimeoutValue = config.getInitParameter("jspIdleTimeout");
-
-        if (jspIdleTimeoutValue != null) {
+    private void setTrimSpaces(ServletConfig config) {
+        String trimSpaces = config.getInitParameter("trimSpaces");
+        if (trimSpaces != null) {
             try {
-                this.jspIdleTimeout = Integer.parseInt(jspIdleTimeoutValue);
-            } catch(NumberFormatException ex) {
+                this.trimSpaces = TrimSpacesOption.valueOf(trimSpaces.toUpperCase());
+            } catch (IllegalArgumentException iae) {
                 if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.jspIdleTimeout", ""+this.jspIdleTimeout));
-                }
-            }
-        }
-    }
-
-    private void setMaxLoadedJsps(ServletConfig config) {
-        String maxLoadedJspsValue = config.getInitParameter("maxLoadedJsps");
-
-        if (maxLoadedJspsValue != null) {
-            try {
-                this.maxLoadedJsps = Integer.parseInt(maxLoadedJspsValue);
-            } catch(NumberFormatException ex) {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.maxLoadedJsps", ""+this.maxLoadedJsps));
-                }
-            }
-        }
-    }
-
-    private void setDisplaySourceFragment(ServletConfig config) {
-        String displaySourceFragmentValue = config.getInitParameter("displaySourceFragment");
-
-        if (displaySourceFragmentValue != null) {
-            if (displaySourceFragmentValue.equalsIgnoreCase("true")) {
-                this.displaySourceFragment = true;
-            } else if (displaySourceFragmentValue.equalsIgnoreCase("false")) {
-                this.displaySourceFragment = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.displaySourceFragment"));
-                }
-            }
-        }
-    }
-
-    private void setXpoweredBy(ServletConfig config) {
-        String xpoweredByValue = config.getInitParameter("xpoweredBy");
-
-        if (xpoweredByValue != null) {
-            if (xpoweredByValue.equalsIgnoreCase("true")) {
-                this.xpoweredBy = true;
-            } else if (xpoweredByValue.equalsIgnoreCase("false")) {
-                this.xpoweredBy = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.xpoweredBy"));
-                }
-            }
-        }
-    }
-
-    private void setFork(ServletConfig config) {
-        String forkValue = config.getInitParameter("fork");
-
-        if (forkValue != null) {
-            if (forkValue.equalsIgnoreCase("true")) {
-                this.fork = true;
-            } else if (forkValue.equalsIgnoreCase("false")) {
-                this.fork = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.fork"));
-                }
-            }
-        }
-    }
-
-    private void setCompilerClassName(ServletConfig config) {
-        String compilerClassNameValue = config.getInitParameter("compilerClassName");
-
-        if (compilerClassNameValue != null) {
-            this.compilerClassName = compilerClassNameValue;
-        }
-    }
-
-    private void setJavaEncoding(ServletConfig config) {
-        String javaEncodingValue = config.getInitParameter("javaEncoding");
-
-        if (javaEncodingValue != null) {
-            this.javaEncoding = javaEncodingValue;
-        }
-    }
-
-    private void setCompilerSourceVM(ServletConfig config) {
-        String compilerSourceVmValue = config.getInitParameter("compilerSourceVM");
-
-        if(compilerSourceVmValue != null) {
-            this.compilerSourceVM = compilerSourceVmValue;
-        }
-    }
-
-    private void setCompilerTargetVM(ServletConfig config) {
-        String compilerTargetVmValue = config.getInitParameter("compilerTargetVM");
-
-        if(compilerTargetVmValue != null) {
-            this.compilerTargetVM = compilerTargetVmValue;
-        }
-    }
-
-    private void setScratchDir(ServletConfig config, ServletContext context) {
-        String dir = config.getInitParameter("scratchdir");
-
-        if (dir != null && Constants.IS_SECURITY_ENABLED) {
-            log.info(Localizer.getMessage("jsp.info.ignoreSetting", "scratchdir", dir));
-            dir = null;
-        }
-
-        if (dir != null) {
-            scratchDir = new File(dir);
-        } else {
-            // First try the Servlet 2.2 javax.servlet.context.tempdir property
-            scratchDir = (File) context.getAttribute(ServletContext.TEMPDIR);
-            if (scratchDir == null) {
-                // Not running in a Servlet 2.2 container.
-                // Try to get the JDK 1.2 java.io.tmpdir property
-                dir = System.getProperty("java.io.tmpdir");
-                if (dir != null)
-                    scratchDir = new File(dir);
-            }
-        }
-    }
-
-    private void setClasspath(ServletConfig config) {
-        String classpathValue = config.getInitParameter("classpath");
-
-        if (classpathValue != null) {
-            this.classpath = classpathValue;
-        }
-    }
-
-    private void setIeClassId(ServletConfig config) {
-        String ieClassIdValue = config.getInitParameter("ieClassId");
-
-        if (ieClassIdValue != null) {
-            this.ieClassId = ieClassIdValue;
-        }
-    }
-
-    private void setErrorOnUseBeanInvalidClassAttribute(ServletConfig config) {
-        String errorOnUseBeanInvalidClassAttributeValue = config.getInitParameter("errorOnUseBeanInvalidClassAttribute");
-
-        if (errorOnUseBeanInvalidClassAttributeValue != null) {
-            if (errorOnUseBeanInvalidClassAttributeValue.equalsIgnoreCase("true")) {
-                this.errorOnUseBeanInvalidClassAttribute = true;
-            } else if (errorOnUseBeanInvalidClassAttributeValue.equalsIgnoreCase("false")) {
-                this.errorOnUseBeanInvalidClassAttribute = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.errBean"));
-                }
-            }
-        }
-    }
-
-    private void setGenStingAsArray(ServletConfig config) {
-        String genCharArrayValue = config.getInitParameter("genStringAsCharArray");
-
-        if (genCharArrayValue != null) {
-            if (genCharArrayValue.equalsIgnoreCase("true")) {
-                genStringAsCharArray = true;
-            } else if (genCharArrayValue.equalsIgnoreCase("false")) {
-                genStringAsCharArray = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.genchararray"));
-                }
-            }
-        }
-    }
-
-    private void setDumpSmap(ServletConfig config) {
-        String dumpSmapValue = config.getInitParameter("dumpSmap");
-
-        if (dumpSmapValue != null) {
-            if (dumpSmapValue.equalsIgnoreCase("true")) {
-                isSmapDumped = true;
-            } else if (dumpSmapValue.equalsIgnoreCase("false")) {
-                isSmapDumped = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.dumpSmap"));
-                }
-            }
-        }
-    }
-
-    private void setSuppressMap(ServletConfig config) {
-        String suppressSmapValue = config.getInitParameter("suppressSmap");
-
-        if (suppressSmapValue != null) {
-            if (suppressSmapValue.equalsIgnoreCase("true")) {
-                isSmapSuppressed = true;
-            } else if (suppressSmapValue.equalsIgnoreCase("false")) {
-                isSmapSuppressed = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.suppressSmap"));
-                }
-            }
-        }
-    }
-
-    private void setDevelopment(ServletConfig config) {
-        String developmentValue = config.getInitParameter("development");
-
-        if (developmentValue != null) {
-            if (developmentValue.equalsIgnoreCase("true")) {
-                this.development = true;
-            } else if (developmentValue.equalsIgnoreCase("false")) {
-                this.development = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.development"));
-                }
-            }
-        }
-    }
-
-    private void setRecompileInFail(ServletConfig config) {
-        String recompileOnFailValue = config.getInitParameter("recompileOnFail");
-
-        if (recompileOnFailValue != null) {
-            if (recompileOnFailValue.equalsIgnoreCase("true")) {
-                this.recompileOnFail = true;
-            } else if (recompileOnFailValue.equalsIgnoreCase("false")) {
-                this.recompileOnFail = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.recompileOnFail"));
-                }
-            }
-        }
-    }
-
-    private void setModificationTestInterval(ServletConfig config) {
-        String modificationTestIntervalValue = config.getInitParameter("modificationTestInterval");
-
-        if (modificationTestIntervalValue != null) {
-            try {
-                this.modificationTestInterval = Integer.parseInt(modificationTestIntervalValue);
-            } catch(NumberFormatException ex) {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.modificationTestInterval"));
-                }
-            }
-        }
-    }
-
-    private void setCheckInterval(ServletConfig config) {
-        String checkIntervalValue = config.getInitParameter("checkInterval");
-
-        if (checkIntervalValue != null) {
-            try {
-                this.checkInterval = Integer.parseInt(checkIntervalValue);
-            } catch(NumberFormatException ex) {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.checkInterval"));
-                }
-            }
-        }
-    }
-
-    private void setDebugInfo(ServletConfig config) {
-        String debugInfoValue = config.getInitParameter("classdebuginfo");
-
-        if (debugInfoValue != null) {
-            if (debugInfoValue.equalsIgnoreCase("true")) {
-                this.classDebugInfo  = true;
-            } else if (debugInfoValue.equalsIgnoreCase("false")) {
-                this.classDebugInfo  = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.classDebugInfo"));
-                }
-            }
-        }
-    }
-
-    private void setMappedFile(ServletConfig config) {
-        String mappedfileValue = config.getInitParameter("mappedfile");
-
-        if (mappedfileValue != null) {
-            if (mappedfileValue.equalsIgnoreCase("true")) {
-                this.mappedFile = true;
-            } else if (mappedfileValue.equalsIgnoreCase("false")) {
-                this.mappedFile = false;
-            } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.mappedFile"));
+                    log.warn(Localizer.getMessage("jsp.warning.trimspaces"), iae);
                 }
             }
         }
@@ -871,12 +558,10 @@ public final class EmbeddedServletOptions implements Options {
 
     private void setPoolingEnabled(ServletConfig config) {
         this.isPoolingEnabled = true;
-
-        String poolingEnabledValue = config.getInitParameter("enablePooling");
-
-        if (poolingEnabledValue != null
-                && !poolingEnabledValue.equalsIgnoreCase("true")) {
-            if (poolingEnabledValue.equalsIgnoreCase("false")) {
+        String poolingEnabledParam = config.getInitParameter("enablePooling");
+        if (poolingEnabledParam != null
+                && !poolingEnabledParam.equalsIgnoreCase("true")) {
+            if (poolingEnabledParam.equalsIgnoreCase("false")) {
                 this.isPoolingEnabled = false;
             } else {
                 if (log.isWarnEnabled()) {
@@ -886,34 +571,335 @@ public final class EmbeddedServletOptions implements Options {
         }
     }
 
-    private void setTrimSpaces(ServletConfig config) {
-        String trimSpacesValue = config.getInitParameter("trimSpaces");
-
-        if (trimSpacesValue != null) {
-            try {
-                this.trimSpaces = TrimSpacesOption.valueOf(trimSpacesValue.toUpperCase());
-            } catch (IllegalArgumentException iae) {
+    private void setMappedFile(ServletConfig config) {
+        String mappedfile = config.getInitParameter("mappedfile");
+        if (mappedfile != null) {
+            if (mappedfile.equalsIgnoreCase("true")) {
+                this.mappedFile = true;
+            } else if (mappedfile.equalsIgnoreCase("false")) {
+                this.mappedFile = false;
+            } else {
                 if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.trimspaces"), iae);
+                    log.warn(Localizer.getMessage("jsp.warning.mappedFile"));
                 }
             }
         }
     }
 
-    private void setKeepGenerated(ServletConfig config) {
-        String keepgeneratedValue = config.getInitParameter("keepgenerated");
-
-        if (keepgeneratedValue != null) {
-            if (keepgeneratedValue.equalsIgnoreCase("true")) {
-                this.keepGenerated = true;
-            } else if (keepgeneratedValue.equalsIgnoreCase("false")) {
-                this.keepGenerated = false;
+    private void setDebugInfo(ServletConfig config) {
+        String debugInfo = config.getInitParameter("classdebuginfo");
+        if (debugInfo != null) {
+            if (debugInfo.equalsIgnoreCase("true")) {
+                this.classDebugInfo  = true;
+            } else if (debugInfo.equalsIgnoreCase("false")) {
+                this.classDebugInfo  = false;
             } else {
                 if (log.isWarnEnabled()) {
-                    log.warn(Localizer.getMessage("jsp.warning.keepgenerated"));
+                    log.warn(Localizer.getMessage("jsp.warning.classDebugInfo"));
                 }
             }
         }
+    }
+
+    private void setCheckInterval(ServletConfig config) {
+        String checkInterval = config.getInitParameter("checkInterval");
+        if (checkInterval != null) {
+            try {
+                this.checkInterval = Integer.parseInt(checkInterval);
+            } catch(NumberFormatException ex) {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.checkInterval"));
+                }
+            }
+        }
+    }
+
+    private void setModificationTestInterval(ServletConfig config) {
+        String modificationTestInterval = config.getInitParameter("modificationTestInterval");
+        if (modificationTestInterval != null) {
+            try {
+                this.modificationTestInterval = Integer.parseInt(modificationTestInterval);
+            } catch(NumberFormatException ex) {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.modificationTestInterval"));
+                }
+            }
+        }
+    }
+
+    private void setRecompileInFail(ServletConfig config) {
+        String recompileOnFail = config.getInitParameter("recompileOnFail");
+        if (recompileOnFail != null) {
+            if (recompileOnFail.equalsIgnoreCase("true")) {
+                this.recompileOnFail = true;
+            } else if (recompileOnFail.equalsIgnoreCase("false")) {
+                this.recompileOnFail = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.recompileOnFail"));
+                }
+            }
+        }
+    }
+
+    private void setDevelopment(ServletConfig config) {
+        String development = config.getInitParameter("development");
+        if (development != null) {
+            if (development.equalsIgnoreCase("true")) {
+                this.development = true;
+            } else if (development.equalsIgnoreCase("false")) {
+                this.development = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.development"));
+                }
+            }
+        }
+    }
+
+    private void setSuppressMap(ServletConfig config) {
+        String suppressSmap = config.getInitParameter("suppressSmap");
+        if (suppressSmap != null) {
+            if (suppressSmap.equalsIgnoreCase("true")) {
+                isSmapSuppressed = true;
+            } else if (suppressSmap.equalsIgnoreCase("false")) {
+                isSmapSuppressed = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.suppressSmap"));
+                }
+            }
+        }
+    }
+
+    private void setDumpSmap(ServletConfig config) {
+        String dumpSmap = config.getInitParameter("dumpSmap");
+        if (dumpSmap != null) {
+            if (dumpSmap.equalsIgnoreCase("true")) {
+                isSmapDumped = true;
+            } else if (dumpSmap.equalsIgnoreCase("false")) {
+                isSmapDumped = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.dumpSmap"));
+                }
+            }
+        }
+    }
+
+    private void setGenStringAsCharArray(ServletConfig config) {
+        String genCharArray = config.getInitParameter("genStringAsCharArray");
+        if (genCharArray != null) {
+            if (genCharArray.equalsIgnoreCase("true")) {
+                genStringAsCharArray = true;
+            } else if (genCharArray.equalsIgnoreCase("false")) {
+                genStringAsCharArray = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.genchararray"));
+                }
+            }
+        }
+    }
+
+    private void setErrorOnUseBeanInvalidClassAttribute(ServletConfig config) {
+        String errorBeanAttribute = config.getInitParameter("errorOnUseBeanInvalidClassAttribute");
+        if (errorBeanAttribute != null) {
+            if (errorBeanAttribute.equalsIgnoreCase("true")) {
+                this.errorOnUseBeanInvalidClassAttribute = true;
+            } else if (errorBeanAttribute.equalsIgnoreCase("false")) {
+                this.errorOnUseBeanInvalidClassAttribute = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.errBean"));
+                }
+            }
+        }
+    }
+
+    private void setIeClassId(ServletConfig config) {
+        String ieClassId = config.getInitParameter("ieClassId");
+        if (ieClassId != null) {
+            this.ieClassId = ieClassId;
+        }
+    }
+
+    private void setClasspath(ServletConfig config) {
+        String classpath = config.getInitParameter("classpath");
+        if (classpath != null) {
+            this.classpath = classpath;
+        }
+    }
+
+    private void setScratchDir(ServletConfig config, ServletContext context) {
+        String dir = config.getInitParameter("scratchdir");
+        if (dir != null && Constants.IS_SECURITY_ENABLED) {
+            log.info(Localizer.getMessage("jsp.info.ignoreSetting", "scratchdir", dir));
+            dir = null;
+        }
+        if (dir != null) {
+            scratchDir = new File(dir);
+        } else {
+            // First try the Servlet 2.2 javax.servlet.context.tempdir property
+            scratchDir = (File) context.getAttribute(ServletContext.TEMPDIR);
+            if (scratchDir == null) {
+                // Not running in a Servlet 2.2 container.
+                // Try to get the JDK 1.2 java.io.tmpdir property
+                dir = System.getProperty("java.io.tmpdir");
+                if (dir != null) {
+                    scratchDir = new File(dir);
+                }
+            }
+        }
+    }
+
+    private void setCompiler(ServletConfig config) {
+        this.compiler = config.getInitParameter("compiler");
+    }
+
+    private void setCompilerTargetVM(ServletConfig config) {
+        String compilerTargetVM = config.getInitParameter("compilerTargetVM");
+        if(compilerTargetVM != null) {
+            this.compilerTargetVM = compilerTargetVM;
+        }
+    }
+
+    private void setCompilerSourceVM(ServletConfig config) {
+        String compilerSourceVM = config.getInitParameter("compilerSourceVM");
+        if(compilerSourceVM != null) {
+            this.compilerSourceVM = compilerSourceVM;
+        }
+    }
+
+    private void setJavaEncoding(ServletConfig config) {
+        String javaEncoding = config.getInitParameter("javaEncoding");
+        if (javaEncoding != null) {
+            this.javaEncoding = javaEncoding;
+        }
+    }
+
+   private void setCompilerClassName(ServletConfig config) {
+        String compilerClassName = config.getInitParameter("compilerClassName");
+        if (compilerClassName != null) {
+            this.compilerClassName = compilerClassName;
+        }
+    }
+
+    private void setFork(ServletConfig config) {
+        String fork = config.getInitParameter("fork");
+        if (fork != null) {
+            if (fork.equalsIgnoreCase("true")) {
+                this.fork = true;
+            } else if (fork.equalsIgnoreCase("false")) {
+                this.fork = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.fork"));
+                }
+            }
+        }
+    }
+
+    private void setXpoweredBy(ServletConfig config) {
+        String xpoweredBy = config.getInitParameter("xpoweredBy");
+        if (xpoweredBy != null) {
+            if (xpoweredBy.equalsIgnoreCase("true")) {
+                this.xpoweredBy = true;
+            } else if (xpoweredBy.equalsIgnoreCase("false")) {
+                this.xpoweredBy = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.xpoweredBy"));
+                }
+            }
+        }
+    }
+
+    private void setDisplaySourceFragment(ServletConfig config) {
+        String displaySourceFragment = config.getInitParameter("displaySourceFragment");
+        if (displaySourceFragment != null) {
+            if (displaySourceFragment.equalsIgnoreCase("true")) {
+                this.displaySourceFragment = true;
+            } else if (displaySourceFragment.equalsIgnoreCase("false")) {
+                this.displaySourceFragment = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.displaySourceFragment"));
+                }
+            }
+        }
+    }
+
+    private void setMaxLoadedJsps(ServletConfig config) {
+        String maxLoadedJsps = config.getInitParameter("maxLoadedJsps");
+        if (maxLoadedJsps != null) {
+            try {
+                this.maxLoadedJsps = Integer.parseInt(maxLoadedJsps);
+            } catch(NumberFormatException ex) {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.maxLoadedJsps", ""+this.maxLoadedJsps));
+                }
+            }
+        }
+    }
+
+    private void setJspIdleTimeout(ServletConfig config) {
+        String jspIdleTimeout = config.getInitParameter("jspIdleTimeout");
+        if (jspIdleTimeout != null) {
+            try {
+                this.jspIdleTimeout = Integer.parseInt(jspIdleTimeout);
+            } catch(NumberFormatException ex) {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.jspIdleTimeout", ""+this.jspIdleTimeout));
+                }
+            }
+        }
+    }
+
+    private void setStrictQuoteEscaping(ServletConfig config) {
+        String strictQuoteEscaping = config.getInitParameter("strictQuoteEscaping");
+        if (strictQuoteEscaping != null) {
+            if (strictQuoteEscaping.equalsIgnoreCase("true")) {
+                this.strictQuoteEscaping = true;
+            } else if (strictQuoteEscaping.equalsIgnoreCase("false")) {
+                this.strictQuoteEscaping = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.strictQuoteEscaping"));
+                }
+            }
+        }
+    }
+
+    private void setQuoteAttributeEL(ServletConfig config) {
+        String quoteAttributeEL = config.getInitParameter("quoteAttributeEL");
+        if (quoteAttributeEL != null) {
+            if (quoteAttributeEL.equalsIgnoreCase("true")) {
+                this.quoteAttributeEL = true;
+            } else if (quoteAttributeEL.equalsIgnoreCase("false")) {
+                this.quoteAttributeEL = false;
+            } else {
+                if (log.isWarnEnabled()) {
+                    log.warn(Localizer.getMessage("jsp.warning.quoteAttributeEL"));
+                }
+            }
+        }
+    }
+
+    private void setTldCache(ServletContext context) {
+        // Setup the global Tag Libraries location cache for this
+        // web-application.
+        tldCache = TldCache.getInstance(context);
+    }
+
+    private void setJspConfig(ServletContext context) {
+        // Setup the jsp config info for this web app.
+        jspConfig = new JspConfig(context);
+    }
+
+    private void setTagPluginManager(ServletContext context) {
+        // Create a Tag plugin instance
+        tagPluginManager = new TagPluginManager(context);
     }
 
 }
